@@ -1,5 +1,9 @@
 # Text Search Trigram Index
 
+![Community Contribution](https://img.shields.io/badge/OB1_COMMUNITY-Approved_Contribution-2ea44f?style=for-the-badge&logo=github)
+
+**Created by [@alanshurafa](https://github.com/alanshurafa)**
+
 > Adds a `pg_trgm` GIN index on `public.thoughts.content` so `search_thoughts_text` ILIKE fallback queries run in ~150ms instead of ~8s.
 
 ## What It Does
