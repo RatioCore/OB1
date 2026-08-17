@@ -87,6 +87,23 @@ Local validation target: `openclaw --profile ob1-agent-memory plugins inspect nb
 
 Native smoke target: run an OpenClaw agent turn that calls `openbrain_list_review_queue` with no shell/file tools. The result should show an `openbrain_list_review_queue` tool call and zero failures.
 
+Review-queue listing is bounded and content-redacted by default. Use `limit` and
+`offset` for deterministic pages, or `summary_only: true` for body-free counts
+by provenance status and source kind. Retrieve one selected memory with
+`openbrain_inspect_memory`; set `include_content: true` only for an explicitly
+bounded review page. Content-bearing pages are capped at 10 records even when a
+higher limit is requested.
+
+```json
+{
+  "project_id": "ratiocore-ops",
+  "summary_only": true
+}
+```
+
+The response contains `queue` pagination metadata, body-free `summary` counts,
+and an empty `memories` array in summary-only mode.
+
 For the repeatable full loop harness:
 
 ```bash
