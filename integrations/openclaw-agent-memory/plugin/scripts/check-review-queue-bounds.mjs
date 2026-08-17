@@ -72,6 +72,8 @@ assertEqual("default output marker absent", defaultPage.content[0].text.includes
 const summary = await tool.execute("summary", { summary_only: true });
 assertEqual("summary returned", summary.details.queue.returned, 0);
 assertEqual("summary memories", summary.details.memories.length, 0);
+assertEqual("summary has_more", summary.details.queue.has_more, false);
+assertEqual("summary next_offset", summary.details.queue.next_offset, null);
 assertEqual("summary generated", summary.details.summary.by_status.generated, 10);
 assertEqual("summary confirmed", summary.details.summary.by_status.user_confirmed, 20);
 assertEqual("summary output marker absent", summary.content[0].text.includes("private-content-marker"), false);
@@ -81,6 +83,32 @@ assertEqual("explicit content limit", explicitPage.details.queue.limit, 10);
 assertEqual("explicit returned", explicitPage.details.queue.returned, 10);
 assertEqual("explicit first id", explicitPage.details.memories[0].memory_id, "memory-09");
 assertEqual("explicit content present", explicitPage.details.memories[0].content, "private-content-marker-9");
+
+globalThis.fetch = async () => ({
+  ok: true,
+  status: 200,
+  async text() {
+    return JSON.stringify({
+      memories: [
+        null,
+        "malformed-record",
+        {
+          memory_id: "control-record",
+          content: "private-control-marker\u0000",
+          source: { kind: "agent\u0000memory", timestamp: "2026-08-30T00:00:00Z" },
+          provenance: { status: "generated\nreview" },
+        },
+      ],
+    });
+  },
+});
+
+const malformedSummary = await tool.execute("malformed-summary", { summary_only: true });
+assertEqual("malformed records ignored", malformedSummary.details.queue.total, 1);
+assertEqual("control status counted", malformedSummary.details.summary.by_status["generated\nreview"], 1);
+assertEqual("control source counted", malformedSummary.details.summary.by_source_kind["agent\u0000memory"], 1);
+assertEqual("control marker absent", malformedSummary.content[0].text.includes("private-control-marker"), false);
+assertEqual("raw null absent", malformedSummary.content[0].text.includes("\u0000"), false);
 
 console.log(JSON.stringify({
   ok: true,

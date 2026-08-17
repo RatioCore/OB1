@@ -126,17 +126,19 @@ var AgentMemoryClient = class {
     const requestedLimit = boundedInteger(input.limit, DEFAULT_REVIEW_QUEUE_LIMIT, 1, MAX_REVIEW_QUEUE_LIMIT);
     const limit = input.include_content ? Math.min(requestedLimit, MAX_REVIEW_QUEUE_CONTENT_LIMIT) : requestedLimit;
     const offset = boundedInteger(input.offset, 0, 0, Number.MAX_SAFE_INTEGER);
-    const page = input.summary_only ? [] : memories.slice(offset, offset + limit);
+    const summaryOnly = input.summary_only === true;
+    const page = summaryOnly ? [] : memories.slice(offset, offset + limit);
     const visiblePage = input.include_content ? page : page.map(withoutContent);
     const nextOffset = offset + visiblePage.length;
+    const hasMore = !summaryOnly && nextOffset < memories.length;
     return {
       queue: {
         total: memories.length,
         limit,
         offset,
         returned: visiblePage.length,
-        has_more: nextOffset < memories.length,
-        next_offset: nextOffset < memories.length ? nextOffset : null,
+        has_more: hasMore,
+        next_offset: hasMore ? nextOffset : null,
         ordering: "created_at_desc_memory_id_asc",
         content_included: input.include_content === true
       },
