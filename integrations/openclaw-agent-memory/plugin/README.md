@@ -94,6 +94,16 @@ by provenance status and source kind. Retrieve one selected memory with
 bounded review page. Content-bearing pages are capped at 10 records even when a
 higher limit is requested.
 
+```json
+{
+  "project_id": "ratiocore-ops",
+  "summary_only": true
+}
+```
+
+The response contains `queue` pagination metadata, body-free `summary` counts,
+and an empty `memories` array in summary-only mode.
+
 For the repeatable full loop harness:
 
 ```bash
