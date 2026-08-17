@@ -4,12 +4,47 @@ import { definePluginEntry } from "openclaw/plugin-sdk/plugin-entry";
 import { resolveConfiguredSecretInputString } from "openclaw/plugin-sdk/secret-input-runtime";
 
 // src/client.ts
+var DEFAULT_REVIEW_QUEUE_LIMIT = 25;
+var MAX_REVIEW_QUEUE_LIMIT = 100;
+var MAX_REVIEW_QUEUE_CONTENT_LIMIT = 10;
+function boundedInteger(value, fallback, minimum, maximum) {
+  if (typeof value !== "number" || !Number.isFinite(value)) return fallback;
+  return Math.min(maximum, Math.max(minimum, Math.trunc(value)));
+}
+function reviewQueueItems(data) {
+  if (Array.isArray(data)) return data.filter((item) => item && typeof item === "object");
+  if (!data || typeof data !== "object") return [];
+  const memories = data.memories;
+  return Array.isArray(memories) ? memories.filter((item) => item && typeof item === "object") : [];
+}
+function reviewTimestamp(memory) {
+  return memory.freshness?.created_at || memory.source?.timestamp || memory.created_at || "";
+}
+function sortedReviewQueue(memories) {
+  return [...memories].sort((left, right) => {
+    const byTime = String(reviewTimestamp(right)).localeCompare(String(reviewTimestamp(left)));
+    if (byTime !== 0) return byTime;
+    return String(left.memory_id || "").localeCompare(String(right.memory_id || ""));
+  });
+}
+function groupedCounts(memories, valueFor) {
+  const counts = /* @__PURE__ */ new Map();
+  for (const memory of memories) {
+    const value = String(valueFor(memory) || "unknown");
+    counts.set(value, (counts.get(value) || 0) + 1);
+  }
+  return Object.fromEntries([...counts.entries()].sort(([left], [right]) => left.localeCompare(right)));
+}
+function withoutContent(memory) {
+  const { content: _content, ...metadata } = memory;
+  return metadata;
+}
 function requestInput(input) {
   return input && typeof input === "object" ? input : {};
 }
 function projectIdFrom(input, configuredProjectId) {
-  if (configuredProjectId) return configuredProjectId;
   if (typeof input.project_id === "string" || input.project_id === null) return input.project_id;
+  if (configuredProjectId) return configuredProjectId;
   return null;
 }
 var AgentMemoryClient = class {
@@ -81,12 +116,36 @@ var AgentMemoryClient = class {
   inspectMemory(memoryId) {
     return this.request(`/memories/${memoryId}`);
   }
-  listReviewQueue(input = {}) {
+  async listReviewQueue(input = {}) {
     const workspaceId = input.workspace_id || this.config.workspaceId;
     const projectId = input.project_id || this.config.projectId;
     const params = new URLSearchParams({ workspace_id: workspaceId });
     if (projectId) params.set("project_id", projectId);
-    return this.request(`/memories/review?${params.toString()}`);
+    const data = await this.request(`/memories/review?${params.toString()}`);
+    const memories = sortedReviewQueue(reviewQueueItems(data));
+    const requestedLimit = boundedInteger(input.limit, DEFAULT_REVIEW_QUEUE_LIMIT, 1, MAX_REVIEW_QUEUE_LIMIT);
+    const limit = input.include_content ? Math.min(requestedLimit, MAX_REVIEW_QUEUE_CONTENT_LIMIT) : requestedLimit;
+    const offset = boundedInteger(input.offset, 0, 0, Number.MAX_SAFE_INTEGER);
+    const page = input.summary_only ? [] : memories.slice(offset, offset + limit);
+    const visiblePage = input.include_content ? page : page.map(withoutContent);
+    const nextOffset = offset + visiblePage.length;
+    return {
+      queue: {
+        total: memories.length,
+        limit,
+        offset,
+        returned: visiblePage.length,
+        has_more: nextOffset < memories.length,
+        next_offset: nextOffset < memories.length ? nextOffset : null,
+        ordering: "created_at_desc_memory_id_asc",
+        content_included: input.include_content === true
+      },
+      summary: {
+        by_status: groupedCounts(memories, (memory) => memory.provenance?.status),
+        by_source_kind: groupedCounts(memories, (memory) => memory.source?.kind)
+      },
+      memories: visiblePage
+    };
   }
   reviewMemory(memoryId, input) {
     return this.request(`/memories/${memoryId}/review`, { method: "PATCH", body: input });
@@ -209,6 +268,14 @@ var writebackParameters = Type.Object({
     channel: optionalNullableString()
   }))
 });
+var reviewQueueParameters = Type.Object({
+  workspace_id: Type.Optional(Type.String()),
+  project_id: Type.Optional(Type.String()),
+  limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 100 })),
+  offset: Type.Optional(Type.Integer({ minimum: 0 })),
+  summary_only: Type.Optional(Type.Boolean()),
+  include_content: Type.Optional(Type.Boolean())
+});
 
 // src/index.ts
 async function clientFromApi(api) {
@@ -251,112 +318,6 @@ function toolResult(value) {
     details: value
   };
 }
-var nullableString = Type.Union([Type.String(), Type.Literal(null)]);
-var optionalNullableString = Type.Optional(nullableString);
-var stringArrayRecord = Type.Record(Type.String(), Type.Array(Type.String()));
-var channelParameters = Type.Object({
-  kind: optionalNullableString,
-  id: optionalNullableString,
-  thread_id: optionalNullableString
-});
-var runtimeParameters = Type.Object({
-  name: Type.Optional(Type.String()),
-  version: optionalNullableString
-});
-var modelIntentParameters = Type.Object({
-  provider: optionalNullableString,
-  model: optionalNullableString
-});
-var recallParameters = Type.Object({
-  schema_version: Type.Optional(Type.Union([
-    Type.Literal("openbrain.agent_memory.recall.v1"),
-    Type.Literal("openbrain.openclaw.recall.v1")
-  ])),
-  workspace_id: Type.Optional(Type.String()),
-  project_id: optionalNullableString,
-  task_id: optionalNullableString,
-  flow_id: optionalNullableString,
-  task_type: optionalNullableString,
-  channel: Type.Optional(channelParameters),
-  runtime: Type.Optional(runtimeParameters),
-  model_intent: Type.Optional(modelIntentParameters),
-  query: Type.String(),
-  entities: Type.Optional(stringArrayRecord),
-  scope: Type.Optional(Type.Object({
-    visibility: optionalNullableString,
-    project_only: Type.Optional(Type.Boolean()),
-    include_unconfirmed: Type.Optional(Type.Boolean()),
-    include_stale: Type.Optional(Type.Boolean())
-  })),
-  limits: Type.Optional(Type.Object({
-    max_items: Type.Optional(Type.Number({ minimum: 1, maximum: 50 })),
-    max_tokens: Type.Optional(Type.Number({ minimum: 256, maximum: 2e4 })),
-    recency_days: Type.Optional(Type.Union([Type.Number({ minimum: 1 }), Type.Literal(null)]))
-  })),
-  sensitivity: Type.Optional(Type.Record(Type.String(), Type.Boolean()))
-});
-var memoryPayloadParameters = Type.Object({
-  decisions: Type.Optional(Type.Array(Type.String())),
-  outputs: Type.Optional(Type.Array(Type.String())),
-  lessons: Type.Optional(Type.Array(Type.String())),
-  constraints: Type.Optional(Type.Array(Type.String())),
-  unresolved_questions: Type.Optional(Type.Array(Type.String())),
-  next_steps: Type.Optional(Type.Array(Type.String())),
-  failures: Type.Optional(Type.Array(Type.String())),
-  artifacts: Type.Optional(Type.Array(Type.Object({
-    kind: Type.String(),
-    uri: Type.String(),
-    description: optionalNullableString
-  }))),
-  entities: Type.Optional(stringArrayRecord)
-});
-var writebackParameters = Type.Object({
-  schema_version: Type.Optional(Type.Union([
-    Type.Literal("openbrain.agent_memory.writeback.v1"),
-    Type.Literal("openbrain.openclaw.writeback.v1")
-  ])),
-  workspace_id: Type.Optional(Type.String()),
-  project_id: optionalNullableString,
-  task_id: optionalNullableString,
-  flow_id: optionalNullableString,
-  step_id: optionalNullableString,
-  idempotency_key: optionalNullableString,
-  content_hash: optionalNullableString,
-  channel: Type.Optional(channelParameters),
-  runtime: Type.Optional(runtimeParameters),
-  models_used: Type.Optional(Type.Array(Type.Object({
-    provider: Type.String(),
-    model: Type.String(),
-    role: Type.String()
-  }))),
-  source_refs: Type.Optional(Type.Array(Type.Object({
-    kind: Type.String(),
-    uri: optionalNullableString,
-    title: optionalNullableString,
-    timestamp: optionalNullableString
-  }))),
-  memory_payload: memoryPayloadParameters,
-  provenance: Type.Optional(Type.Object({
-    default_status: Type.Optional(Type.Union([
-      Type.Literal("observed"),
-      Type.Literal("inferred"),
-      Type.Literal("user_confirmed"),
-      Type.Literal("imported"),
-      Type.Literal("generated")
-    ])),
-    confidence: Type.Optional(Type.Number({ minimum: 0, maximum: 1 })),
-    requires_review: Type.Optional(Type.Boolean())
-  })),
-  retention: Type.Optional(Type.Object({
-    ttl_days: Type.Optional(Type.Union([Type.Number({ minimum: 1 }), Type.Literal(null)])),
-    stale_after_days: Type.Optional(Type.Union([Type.Number({ minimum: 1 }), Type.Literal(null)]))
-  })),
-  visibility: Type.Optional(Type.Object({
-    workspace: optionalNullableString,
-    project: optionalNullableString,
-    channel: optionalNullableString
-  }))
-});
 function registerTool(api, tool) {
   api.registerTool({
     name: tool.name,
@@ -373,7 +334,6 @@ var index_default = definePluginEntry({
   id: "nbj-ob1-agent-memory",
   name: "NBJ OB1 Agent Memory for OpenClaw",
   description: "Recall and write governed Nate Jones OB1 memory from OpenClaw workflows.",
-  kind: "memory",
   register(api) {
     registerTool(api, {
       name: "openbrain_recall",
@@ -416,11 +376,8 @@ var index_default = definePluginEntry({
     registerTool(api, {
       name: "openbrain_list_review_queue",
       label: "NBJ OB1 review queue",
-      description: "List agent-written memories pending human review.",
-      parameters: Type2.Object({
-        workspace_id: Type2.Optional(Type2.String()),
-        project_id: Type2.Optional(Type2.String())
-      }),
+      description: "List a bounded, content-redacted page of agent-written memories pending human review, or return body-free aggregate counts.",
+      parameters: reviewQueueParameters,
       run: (client, input) => client.listReviewQueue(input)
     });
     registerTool(api, {
@@ -460,6 +417,115 @@ var index_default = definePluginEntry({
       parameters: Type2.Object({ request_id: Type2.String() }),
       run: (client, input) => client.getRecallTrace(input.request_id)
     });
+    const OB1_TOOL_NAMES = [
+      "openbrain_recall",
+      "openbrain_writeback",
+      "openbrain_report_usage",
+      "openbrain_inspect_memory",
+      "openbrain_list_review_queue",
+      "openbrain_review_memory",
+      "openbrain_get_recall_trace"
+    ];
+    function isConfigured() {
+      const raw = api.pluginConfig || {};
+      return typeof raw.endpoint === "string" && raw.endpoint.length > 0 && typeof raw.workspaceId === "string" && raw.workspaceId.length > 0;
+    }
+    if (typeof api.registerMemoryPromptSupplement === "function") {
+      api.registerMemoryPromptSupplement((params) => {
+        if (!isConfigured()) return [];
+        const present = OB1_TOOL_NAMES.filter((t) => params.availableTools.has(t));
+        if (present.length === 0) return [];
+        return [
+          "## OB1 Agent Memory",
+          "Long-term governed memory is available via OB1. Use it as a discipline, not a fallback.",
+          "",
+          "Workflow:",
+          "- Before meaningful work, call `openbrain_recall` with a task-scoped query.",
+          "- Treat returned memories tagged `instruction` as binding rules; `evidence`-tagged ones as supporting context only.",
+          "- After meaningful work, call `openbrain_writeback` with compact, provenance-labeled findings (decisions, lessons, constraints, outputs, failures).",
+          "- After acting on recalled memories, call `openbrain_report_usage` with `request_id` and the IDs you used vs. ignored \u2014 closes the recall-quality loop.",
+          "",
+          `Available tools: ${present.map((t) => "`" + t + "`").join(", ")}.`
+        ];
+      });
+    }
+    if (typeof api.registerMemoryCorpusSupplement === "function") {
+      api.registerMemoryCorpusSupplement({
+        async search(input) {
+          if (!isConfigured()) return [];
+          let client;
+          try {
+            client = await clientFromApi(api);
+          } catch {
+            return [];
+          }
+          const limit = Math.min(Math.max(input.maxResults ?? 10, 1), 50);
+          let response;
+          try {
+            response = await client.recall({
+              query: input.query.slice(0, 2e3),
+              task_type: "general",
+              limits: { max_items: limit, max_tokens: 4e3 },
+              scope: { project_only: false, include_unconfirmed: false, include_stale: false }
+            });
+          } catch {
+            return [];
+          }
+          const memories = Array.isArray(response?.memories) ? response.memories : [];
+          return memories.map((m, i) => {
+            const policy = m?.use_policy ?? {};
+            const provenance = policy?.can_use_as_instruction ? "instruction" : policy?.can_use_as_evidence ? "evidence" : void 0;
+            return {
+              corpus: "openbrain",
+              path: `openbrain://memory/${m?.id ?? i}`,
+              title: typeof m?.summary === "string" ? m.summary.slice(0, 80) : void 0,
+              kind: "memory",
+              score: typeof m?.score === "number" ? m.score : Math.max(0, 1 - i / Math.max(memories.length, 1)),
+              snippet: String(m?.summary ?? m?.content ?? "").slice(0, 600),
+              id: typeof m?.id === "string" ? m.id : void 0,
+              provenanceLabel: provenance,
+              source: "openbrain.agent_memory",
+              sourceType: "openbrain.agent_memory",
+              updatedAt: typeof m?.updated_at === "string" ? m.updated_at : void 0
+            };
+          });
+        },
+        async get(input) {
+          if (!isConfigured()) return null;
+          const id = input.lookup.replace(/^openbrain:\/\/memory\//, "");
+          if (!id) return null;
+          let client;
+          try {
+            client = await clientFromApi(api);
+          } catch {
+            return null;
+          }
+          let memory;
+          try {
+            memory = await client.inspectMemory(id);
+          } catch {
+            return null;
+          }
+          if (!memory || typeof memory !== "object") return null;
+          const policy = memory?.use_policy ?? {};
+          const provenance = policy?.can_use_as_instruction ? "instruction" : policy?.can_use_as_evidence ? "evidence" : void 0;
+          const content = String(memory?.content ?? memory?.summary ?? "");
+          return {
+            corpus: "openbrain",
+            path: input.lookup,
+            title: typeof memory?.summary === "string" ? memory.summary.slice(0, 80) : void 0,
+            kind: "memory",
+            content,
+            fromLine: 1,
+            lineCount: content.split("\n").length,
+            id: typeof memory?.id === "string" ? memory.id : id,
+            provenanceLabel: provenance,
+            sourceType: "openbrain.agent_memory",
+            updatedAt: typeof memory?.updated_at === "string" ? memory.updated_at : void 0
+          };
+        }
+      });
+    }
   }
 });
 export {

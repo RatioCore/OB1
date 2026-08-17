@@ -117,3 +117,12 @@ export const writebackParameters = Type.Object({
     channel: optionalNullableString(),
   })),
 });
+
+export const reviewQueueParameters = Type.Object({
+  workspace_id: Type.Optional(Type.String()),
+  project_id: Type.Optional(Type.String()),
+  limit: Type.Optional(Type.Integer({ minimum: 1, maximum: 100 })),
+  offset: Type.Optional(Type.Integer({ minimum: 0 })),
+  summary_only: Type.Optional(Type.Boolean()),
+  include_content: Type.Optional(Type.Boolean()),
+});

@@ -2,7 +2,7 @@ import { Type } from "typebox";
 import { definePluginEntry } from "openclaw/plugin-sdk/plugin-entry";
 import { resolveConfiguredSecretInputString } from "openclaw/plugin-sdk/secret-input-runtime";
 import { AgentMemoryClient, type AgentMemoryConfig } from "./client.js";
-import { recallParameters, writebackParameters } from "./tool-schemas.js";
+import { recallParameters, reviewQueueParameters, writebackParameters } from "./tool-schemas.js";
 
 async function clientFromApi(api: { pluginConfig?: unknown; config?: unknown }) {
   const raw = (api.pluginConfig || {}) as Record<string, unknown>;
@@ -48,119 +48,6 @@ function toolResult(value: unknown) {
     details: value,
   };
 }
-
-const nullableString = Type.Union([Type.String(), Type.Literal(null)]);
-const optionalNullableString = Type.Optional(nullableString);
-const stringArrayRecord = Type.Record(Type.String(), Type.Array(Type.String()));
-
-const channelParameters = Type.Object({
-  kind: optionalNullableString,
-  id: optionalNullableString,
-  thread_id: optionalNullableString,
-});
-
-const runtimeParameters = Type.Object({
-  name: Type.Optional(Type.String()),
-  version: optionalNullableString,
-});
-
-const modelIntentParameters = Type.Object({
-  provider: optionalNullableString,
-  model: optionalNullableString,
-});
-
-const recallParameters = Type.Object({
-  schema_version: Type.Optional(Type.Union([
-    Type.Literal("openbrain.agent_memory.recall.v1"),
-    Type.Literal("openbrain.openclaw.recall.v1"),
-  ])),
-  workspace_id: Type.Optional(Type.String()),
-  project_id: optionalNullableString,
-  task_id: optionalNullableString,
-  flow_id: optionalNullableString,
-  task_type: optionalNullableString,
-  channel: Type.Optional(channelParameters),
-  runtime: Type.Optional(runtimeParameters),
-  model_intent: Type.Optional(modelIntentParameters),
-  query: Type.String(),
-  entities: Type.Optional(stringArrayRecord),
-  scope: Type.Optional(Type.Object({
-    visibility: optionalNullableString,
-    project_only: Type.Optional(Type.Boolean()),
-    include_unconfirmed: Type.Optional(Type.Boolean()),
-    include_stale: Type.Optional(Type.Boolean()),
-  })),
-  limits: Type.Optional(Type.Object({
-    max_items: Type.Optional(Type.Number({ minimum: 1, maximum: 50 })),
-    max_tokens: Type.Optional(Type.Number({ minimum: 256, maximum: 20000 })),
-    recency_days: Type.Optional(Type.Union([Type.Number({ minimum: 1 }), Type.Literal(null)])),
-  })),
-  sensitivity: Type.Optional(Type.Record(Type.String(), Type.Boolean())),
-});
-
-const memoryPayloadParameters = Type.Object({
-  decisions: Type.Optional(Type.Array(Type.String())),
-  outputs: Type.Optional(Type.Array(Type.String())),
-  lessons: Type.Optional(Type.Array(Type.String())),
-  constraints: Type.Optional(Type.Array(Type.String())),
-  unresolved_questions: Type.Optional(Type.Array(Type.String())),
-  next_steps: Type.Optional(Type.Array(Type.String())),
-  failures: Type.Optional(Type.Array(Type.String())),
-  artifacts: Type.Optional(Type.Array(Type.Object({
-    kind: Type.String(),
-    uri: Type.String(),
-    description: optionalNullableString,
-  }))),
-  entities: Type.Optional(stringArrayRecord),
-});
-
-const writebackParameters = Type.Object({
-  schema_version: Type.Optional(Type.Union([
-    Type.Literal("openbrain.agent_memory.writeback.v1"),
-    Type.Literal("openbrain.openclaw.writeback.v1"),
-  ])),
-  workspace_id: Type.Optional(Type.String()),
-  project_id: optionalNullableString,
-  task_id: optionalNullableString,
-  flow_id: optionalNullableString,
-  step_id: optionalNullableString,
-  idempotency_key: optionalNullableString,
-  content_hash: optionalNullableString,
-  channel: Type.Optional(channelParameters),
-  runtime: Type.Optional(runtimeParameters),
-  models_used: Type.Optional(Type.Array(Type.Object({
-    provider: Type.String(),
-    model: Type.String(),
-    role: Type.String(),
-  }))),
-  source_refs: Type.Optional(Type.Array(Type.Object({
-    kind: Type.String(),
-    uri: optionalNullableString,
-    title: optionalNullableString,
-    timestamp: optionalNullableString,
-  }))),
-  memory_payload: memoryPayloadParameters,
-  provenance: Type.Optional(Type.Object({
-    default_status: Type.Optional(Type.Union([
-      Type.Literal("observed"),
-      Type.Literal("inferred"),
-      Type.Literal("user_confirmed"),
-      Type.Literal("imported"),
-      Type.Literal("generated"),
-    ])),
-    confidence: Type.Optional(Type.Number({ minimum: 0, maximum: 1 })),
-    requires_review: Type.Optional(Type.Boolean()),
-  })),
-  retention: Type.Optional(Type.Object({
-    ttl_days: Type.Optional(Type.Union([Type.Number({ minimum: 1 }), Type.Literal(null)])),
-    stale_after_days: Type.Optional(Type.Union([Type.Number({ minimum: 1 }), Type.Literal(null)])),
-  })),
-  visibility: Type.Optional(Type.Object({
-    workspace: optionalNullableString,
-    project: optionalNullableString,
-    channel: optionalNullableString,
-  })),
-});
 
 function registerTool(api: any, tool: { name: string; label: string; description: string; parameters: unknown; run: (client: AgentMemoryClient, input: any) => Promise<unknown> }) {
   api.registerTool({
@@ -225,11 +112,8 @@ export default definePluginEntry({
     registerTool(api, {
       name: "openbrain_list_review_queue",
       label: "NBJ OB1 review queue",
-      description: "List agent-written memories pending human review.",
-      parameters: Type.Object({
-        workspace_id: Type.Optional(Type.String()),
-        project_id: Type.Optional(Type.String()),
-      }),
+      description: "List a bounded, content-redacted page of agent-written memories pending human review, or return body-free aggregate counts.",
+      parameters: reviewQueueParameters,
       run: (client, input) => client.listReviewQueue(input),
     });
 

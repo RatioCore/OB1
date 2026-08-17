@@ -1,4 +1,4 @@
-import { recallParameters, writebackParameters } from "../src/tool-schemas.js";
+import { recallParameters, reviewQueueParameters, writebackParameters } from "../src/tool-schemas.js";
 
 const checks = [
   {
@@ -10,6 +10,11 @@ const checks = [
     name: "openbrain_writeback",
     schema: writebackParameters,
     expectedProperties: ["schema_version", "memory_payload", "provenance", "retention", "visibility"],
+  },
+  {
+    name: "openbrain_list_review_queue",
+    schema: reviewQueueParameters,
+    expectedProperties: ["workspace_id", "project_id", "limit", "offset", "summary_only", "include_content"],
   },
 ];
 
