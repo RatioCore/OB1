@@ -584,11 +584,19 @@ app.get("/memories/review", async (c) => {
   const workspace_id = c.req.query("workspace_id");
   if (!workspace_id) return c.json({ error: "workspace_id is required" }, 400, corsHeaders);
   const project_id = c.req.query("project_id");
-  let q = supabase.from("agent_memories").select("*").eq("workspace_id", workspace_id).eq("review_status", "pending").order("created_at", { ascending: false }).limit(100);
+  const limit = Math.min(Math.max(parseInt(c.req.query("limit") || "100", 10) || 100, 1), 500);
+  const offset = Math.max(parseInt(c.req.query("offset") || "0", 10) || 0, 0);
+  let q = supabase
+    .from("agent_memories")
+    .select("*")
+    .eq("workspace_id", workspace_id)
+    .eq("review_status", "pending")
+    .order("created_at", { ascending: false })
+    .range(offset, offset + limit - 1);
   if (project_id) q = q.eq("project_id", project_id);
   const { data, error } = await q;
   if (error) return c.json({ error: error.message }, 500, corsHeaders);
-  return c.json({ memories: (data || []).map(responseMemory) }, 200, corsHeaders);
+  return c.json({ memories: (data || []).map(responseMemory), count: data?.length || 0, limit, offset }, 200, corsHeaders);
 });
 
 app.get("/memories", async (c) => {
