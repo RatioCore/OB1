@@ -3,6 +3,7 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { Hono } from "hono";
 import { createClient } from "@supabase/supabase-js";
 import { z } from "zod";
+import { parseReviewPagination } from "./pagination.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -584,8 +585,8 @@ app.get("/memories/review", async (c) => {
   const workspace_id = c.req.query("workspace_id");
   if (!workspace_id) return c.json({ error: "workspace_id is required" }, 400, corsHeaders);
   const project_id = c.req.query("project_id");
-  const limit = Math.min(Math.max(parseInt(c.req.query("limit") || "100", 10) || 100, 1), 500);
-  const offset = Math.max(parseInt(c.req.query("offset") || "0", 10) || 0, 0);
+  const { limit, offset } = parseReviewPagination(new URL(c.req.url));
+  if (limit === 0) return c.json({ memories: [], count: 0, limit, offset }, 200, corsHeaders);
   let q = supabase
     .from("agent_memories")
     .select("*")
