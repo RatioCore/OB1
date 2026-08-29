@@ -3,6 +3,7 @@ import "jsr:@supabase/functions-js/edge-runtime.d.ts";
 import { Hono } from "hono";
 import { createClient } from "@supabase/supabase-js";
 import { z } from "zod";
+import { parseReviewPagination } from "./pagination.ts";
 
 const SUPABASE_URL = Deno.env.get("SUPABASE_URL")!;
 const SUPABASE_SERVICE_ROLE_KEY = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!;
@@ -584,11 +585,19 @@ app.get("/memories/review", async (c) => {
   const workspace_id = c.req.query("workspace_id");
   if (!workspace_id) return c.json({ error: "workspace_id is required" }, 400, corsHeaders);
   const project_id = c.req.query("project_id");
-  let q = supabase.from("agent_memories").select("*").eq("workspace_id", workspace_id).eq("review_status", "pending").order("created_at", { ascending: false }).limit(100);
+  const { limit, offset } = parseReviewPagination(new URL(c.req.url));
+  if (limit === 0) return c.json({ memories: [], count: 0, limit, offset }, 200, corsHeaders);
+  let q = supabase
+    .from("agent_memories")
+    .select("*")
+    .eq("workspace_id", workspace_id)
+    .eq("review_status", "pending")
+    .order("created_at", { ascending: false })
+    .range(offset, offset + limit - 1);
   if (project_id) q = q.eq("project_id", project_id);
   const { data, error } = await q;
   if (error) return c.json({ error: error.message }, 500, corsHeaders);
-  return c.json({ memories: (data || []).map(responseMemory) }, 200, corsHeaders);
+  return c.json({ memories: (data || []).map(responseMemory), count: data?.length || 0, limit, offset }, 200, corsHeaders);
 });
 
 app.get("/memories", async (c) => {

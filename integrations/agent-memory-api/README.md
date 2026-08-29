@@ -47,6 +47,12 @@ GENERATED DURING SETUP
 --------------------------------------
 ```
 
+## Step-by-step Instructions
+
+1. **Install the schema.** Apply [`schemas/agent-memory/schema.sql`](../../schemas/agent-memory/schema.sql) and confirm the required tables exist.
+2. **Deploy the Edge Function.** Copy this integration into your Supabase project and deploy it with the commands below.
+3. **Test the health endpoint.** Call `/health` with your configured access key and confirm the expected JSON response.
+
 ## Steps
 
 ![Step 1](https://img.shields.io/badge/Step_1-Install_the_Schema-1E88E5?style=for-the-badge)
@@ -98,6 +104,16 @@ The API accepts the runtime-neutral core schema versions and the OpenClaw launch
 | `/memories/:id` | GET | Inspect one memory with source/artifact details |
 | `/memories/:id/review` | PATCH | Confirm, edit, reject, restrict, stale, dispute, or supersede |
 | `/recall-traces/:request_id` | GET | Debug what was recalled and how it was used |
+
+### Review queue pagination
+
+`GET /memories/review` accepts `limit` (default `100`, maximum `500`) and `offset` (default `0`) query parameters. The response echoes `limit`, `offset`, and `count`, so callers can request consecutive pages without repeating the first page. An explicit `limit=0` is valid and returns an empty page without querying memory records.
+
+Example:
+
+```bash
+curl "https://YOUR_PROJECT_REF.supabase.co/functions/v1/agent-memory-api/memories/review?workspace_id=YOUR_WORKSPACE_ID&limit=100&offset=100&key=YOUR_MCP_ACCESS_KEY"
+```
 
 ## Expected Outcome
 
