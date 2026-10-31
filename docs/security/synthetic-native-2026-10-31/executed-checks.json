@@ -1,0 +1,20 @@
+{
+  "command": [
+    "deno",
+    "test",
+    "--cached-only",
+    "--no-lock",
+    "--config",
+    "docs/security/synthetic-native-2026-10-31/deno.json",
+    "--allow-env=SUPABASE_URL,SUPABASE_SERVICE_ROLE_KEY,OPENROUTER_API_KEY,MCP_ACCESS_KEY",
+    "docs/security/synthetic-native-2026-10-31/handler-baseline_test.ts"
+  ],
+  "exitCode": 0,
+  "elapsedSeconds": 0.422,
+  "checkedAt": "2026-10-31T07:27:27.556739+00:00",
+  "stdout": "\u001b[0m\u001b[38;5;245mrunning 8 tests from ./docs/security/synthetic-native-2026-10-31/handler-baseline_test.ts\u001b[0m\nauth: no/wrong key denied before storage; shared key accepted ... \u001b[0m\u001b[32mok\u001b[0m \u001b[0m\u001b[38;5;245m(3ms)\u001b[0m\nrecall: requested project filters; caller can choose another project ... \u001b[0m\u001b[32mok\u001b[0m \u001b[0m\u001b[38;5;245m(2ms)\u001b[0m\nrecall: project_only false returns cross-project records ... \u001b[0m\u001b[32mok\u001b[0m \u001b[0m\u001b[38;5;245m(0ms)\u001b[0m\ndirect ID/list/review: shared-key caller receives other project ... \u001b[0m\u001b[32mok\u001b[0m \u001b[0m\u001b[38;5;245m(0ms)\u001b[0m\nstale: default recall filters, include_stale/direct/list/history still expose ... \u001b[0m\u001b[32mok\u001b[0m \u001b[0m\u001b[38;5;245m(0ms)\u001b[0m\ntrace/derived export: trace includes full other-project memory ... \u001b[0m\u001b[32mok\u001b[0m \u001b[0m\u001b[38;5;245m(0ms)\u001b[0m\nreview actor is unverified; caller can confirm other-project instructions ... \u001b[0m\u001b[32mok\u001b[0m \u001b[0m\u001b[38;5;245m(1ms)\u001b[0m\nrestrict_scope is not quarantine; disposable fixture restores exactly ... \u001b[0m\u001b[32mok\u001b[0m \u001b[0m\u001b[38;5;245m(0ms)\u001b[0m\n\n\u001b[0m\u001b[32mok\u001b[0m | 8 passed | 0 failed \u001b[0m\u001b[38;5;245m(11ms)\u001b[0m\n\n",
+  "stderr": "\u001b[0m\u001b[32mCheck\u001b[0m docs/security/synthetic-native-2026-10-31/handler-baseline_test.ts\n",
+  "networkPermission": false,
+  "database": "disposable in-memory only",
+  "handlerSourceModified": false
+}

@@ -1,0 +1,8 @@
+{
+  "imports": {
+    "jsr:@supabase/functions-js/edge-runtime.d.ts": "./edge-empty.ts",
+    "@supabase/supabase-js": "./synthetic-storage.ts",
+    "hono": "npm:hono@4.9.2",
+    "zod": "npm:zod@4.1.13"
+  }
+}
